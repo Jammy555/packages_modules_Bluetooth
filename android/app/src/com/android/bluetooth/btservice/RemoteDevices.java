@@ -1283,7 +1283,7 @@ public class RemoteDevices {
             debugLog("Added new device property, device=" + bdDevice);
         } else {
             deviceProperties = getDeviceProperties(bdDevice);
-            if (bdDevice.getAddressType() != addressType) {
+            if (Flags.retainAddressType() && bdDevice.getAddressType() != addressType) {
                 warnLog("Address type mismatch for " + bdDevice + ", new type: " + addressType);
             }
         }
