@@ -627,8 +627,16 @@ static uint16_t btif_a2dp_get_peer_mtu(A2dpCodecConfig* a2dp_config) {
   uint16_t peer_mtu = peer_params.peer_mtu;
   uint16_t effective_mtu = bta_av_co_get_encoder_effective_frame_size(peer_addr);
 
-  if (effective_mtu > 0 && effective_mtu < peer_mtu) {
-    peer_mtu = effective_mtu;
+  if (!bluetooth::audio::a2dp::is_hal_offloading()) {
+    if (effective_mtu > 0 && effective_mtu < peer_mtu) {
+      peer_mtu = effective_mtu;
+    }
+  } else if (peer_params.is_peer_edr && !peer_params.peer_supports_3mbps) {
+    // For hardware offload on 2 Mbps EDR links (e.g. 2-DH5 only), restrict MTU
+    // to prevent hardware DSP encoders from overflowing single-packet budgets.
+    if (peer_mtu > MAX_2MBPS_AVDTP_MTU) {
+      peer_mtu = MAX_2MBPS_AVDTP_MTU;
+    }
   }
 
   // b/188020925

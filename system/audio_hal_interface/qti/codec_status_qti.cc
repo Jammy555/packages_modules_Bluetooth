@@ -403,6 +403,51 @@ static bool A2dpAacToHalConfig(const ahal_codec_configuration& config,
   aac_config.frameControlEnabled =
           osi_property_get_bool("persist.vendor.qcom.bluetooth.aac_frm_ctl.enabled", false);
   codec_config->config.aacConfig = aac_config;
+
+  // Qualcomm hardware offload AAC bitrate clamp:
+  // In Hexagon DSP offload, prevent the AAC encoder from targeting a bitrate whose frames
+  // exceed the peer MTU. On 2 Mbps EDR links (e.g. boAt Rockerz 255 ANC with 663-byte MTU),
+  // unrestricted 264 kbps VBR generates frames > 768 bytes, overflowing single 2-DH5 packets
+  // and causing audio chopping/gaps during dynamic passages.
+  uint32_t sample_rate_hz = 0;
+  switch (aac_config.sampleRate) {
+    case SampleRate::RATE_44100:
+      sample_rate_hz = 44100;
+      break;
+    case SampleRate::RATE_48000:
+      sample_rate_hz = 48000;
+      break;
+    case SampleRate::RATE_88200:
+      sample_rate_hz = 88200;
+      break;
+    case SampleRate::RATE_96000:
+      sample_rate_hz = 96000;
+      break;
+    case SampleRate::RATE_16000:
+      sample_rate_hz = 16000;
+      break;
+    case SampleRate::RATE_24000:
+      sample_rate_hz = 24000;
+      break;
+    default:
+      break;
+  }
+
+  if (sample_rate_hz > 0 && codec_config->peerMtu > 0) {
+    uint32_t effective_payload_mtu = codec_config->peerMtu;
+    if (effective_payload_mtu > 12 && effective_payload_mtu > MAX_2MBPS_AVDTP_MTU) {
+      // For transport MTUs, reserve 12 bytes for AVDTP media header
+      effective_payload_mtu -= 12;
+    }
+    // Safe bitrate ceiling: (effective_payload_mtu * 8 * sample_rate) / 1024
+    uint32_t max_safe_bitrate = (effective_payload_mtu * 8 * sample_rate_hz) / 1024;
+    if (codec_config->encodedAudioBitrate > max_safe_bitrate) {
+      log::info("Clamping AAC hardware bitrate from {} to max safe bitrate {} (peer_mtu={})",
+                codec_config->encodedAudioBitrate, max_safe_bitrate, codec_config->peerMtu);
+      codec_config->encodedAudioBitrate = max_safe_bitrate;
+    }
+  }
+
   return true;
 }
 
